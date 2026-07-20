@@ -7,8 +7,8 @@ import images
 import storage
 import video
 
-TELEGRAM_TOKEN = "8889911470:AAElM2itSzfhwmQAQO75gDIrnHfKHGgHxH0"
-CHANNEL_ID = "-1003861121732"
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8889911470:AAElM2itSzfhwmQAQO75gDIrnHfKHGgHxH0")
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1003861121732")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 app = Flask(__name__)
@@ -33,7 +33,7 @@ def is_member(user_id: int) -> bool:
 
 
 def send_join_prompt(chat_id):
-    invite_url = "https://t.me/+ckfO94UHyhllODg0"
+    invite_url = os.environ.get("CHANNEL_INVITE_LINK", "https://t.me/+ckfO94UHyhllODg0")
     tg("sendMessage", chat_id=chat_id, text="Join the channel to use this bot.",
        reply_markup={"inline_keyboard": [
            [{"text": "📢 Join Channel", "url": invite_url}],
@@ -53,7 +53,7 @@ def main_menu_keyboard():
 
 
 def model_menu_keyboard():
-    choices = models.available_models()
+    choices = models.available_models() if hasattr(models, 'available_models') else {"default": "Default AI"}
     rows = [[{"text": label, "callback_data": f"setmodel:{key}"}] for key, label in choices.items()]
     rows.append([{"text": "Close", "callback_data": "menu:close"}])
     return {"inline_keyboard": rows}
@@ -86,10 +86,10 @@ def handle_callback(cq):
         tg("sendMessage", chat_id=chat_id, text="Pick a model:", reply_markup=model_menu_keyboard())
     elif data == "menu:image":
         u["mode"] = "image"
-        tg("sendMessage", chat_id=chat_id, text="Image mode on. Send a prompt (e.g., 'A futuristic car')!")
+        tg("sendMessage", chat_id=chat_id, text="Image mode on. Send a prompt (e.g. 'A futuristic car')!")
     elif data == "menu:video":
         u["mode"] = "video"
-        tg("sendMessage", chat_id=chat_id, text="Video mode on. Send a prompt (e.g., 'A dog running')!")
+        tg("sendMessage", chat_id=chat_id, text="Video mode on. Send a prompt (e.g. 'A running dog')!")
     elif data == "menu:search":
         u["mode"] = "search"
         tg("sendMessage", chat_id=chat_id, text="Web search mode on. Ask me anything current.")
@@ -97,7 +97,7 @@ def handle_callback(cq):
         key = data.split(":", 1)[1]
         u["model"] = key
         u["mode"] = "chat"
-        choices = models.available_models()
+        choices = models.available_models() if hasattr(models, 'available_models') else {}
         label = choices.get(key, key)
         tg("sendMessage", chat_id=chat_id, text=f"Model set to {label}.")
 
@@ -119,8 +119,17 @@ def handle_text(chat_id, user_id, text):
     if u.get("mode") == "image":
         tg("sendChatAction", chat_id=chat_id, action="upload_photo")
         try:
-            url = images.generate_image_url(text)
-            tg("sendPhoto", chat_id=chat_id, photo=url, caption=text[:200])
+            # Uses generate_image_bytes if available, falls back to URL
+            if hasattr(images, 'generate_image_bytes'):
+                img_data = images.generate_image_bytes(text)
+                requests.post(
+                    f"{TELEGRAM_API}/sendPhoto",
+                    data={"chat_id": chat_id, "caption": text[:200]},
+                    files={"photo": ("image.jpg", img_data, "image/jpeg")}
+                )
+            else:
+                url = images.generate_image_url(text)
+                tg("sendPhoto", chat_id=chat_id, photo=url, caption=text[:200])
             storage.record_image(chat_id)
         except Exception as e:
             tg("sendMessage", chat_id=chat_id, text=f"Image generation failed: {e}")
@@ -147,7 +156,10 @@ def handle_text(chat_id, user_id, text):
     u["history"][:] = u["history"][-10:]
 
     try:
-        reply = models.ask(u["model"], u["history"], web_search=(u.get("mode") == "search"))
+        if hasattr(models, 'ask'):
+            reply = models.ask(u.get("model", "groq-llama"), u["history"], web_search=(u.get("mode") == "search"))
+        else:
+            reply = models.generate_text_response(text, u)
     except Exception as e:
         reply = f"Error: {e}"
 
