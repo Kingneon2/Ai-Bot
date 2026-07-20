@@ -1,13 +1,9 @@
+import os
 import requests
 
-GEMINI_API_KEY = "AQ.Ab8RN6KT9RQm0hYECEsL_S59o6PniTCc95kPBXvqEd13Le6R0w"
-GROQ_API_KEY = "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"
-OPENROUTER_API_KEY = "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"
-MISTRAL_API_KEY = "6WuGmf9myQ15mB4sxDTzvJFcXrwXpFRV"
-CEREBRAS_API_KEY = "csk-5hktwy3f2frttdwpkkjjc2dcmk5jedkxnjfw5r84v66xdwey"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
 
-def generate_text_response(prompt: str, user_state: dict) -> str:
-    # Try Groq API
+def generate_text_response(prompt: str, user_state: dict = None) -> str:
     if GROQ_API_KEY:
         try:
             res = requests.post(
@@ -21,8 +17,18 @@ def generate_text_response(prompt: str, user_state: dict) -> str:
             )
             if res.status_code == 200:
                 return res.json()["choices"][0]["message"]["content"]
-        except Exception:
-            pass
+        except Exception as e:
+            return f"Error connecting to AI: {e}"
 
-    return f"Received: '{prompt}'"
+    return f"Received: {prompt}"
+
+def ask(model_name, history, web_search=False):
+    # Extracts the latest user message from history
+    last_msg = history[-1]["content"] if history else "Hello"
+    return generate_text_response(last_msg)
+
+def available_models():
+    return {
+        "llama-3.3-70b": "Llama 3.3 70B (Default)",
+    }
     
