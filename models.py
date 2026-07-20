@@ -1,34 +1,44 @@
 import os
 import requests
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
-def generate_text_response(prompt: str, user_state: dict = None) -> str:
-    if GROQ_API_KEY:
-        try:
-            res = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [{"role": "user", "content": prompt}]
-                },
-                timeout=10
-            )
-            if res.status_code == 200:
-                return res.json()["choices"][0]["message"]["content"]
-        except Exception as e:
-            return f"Error connecting to AI: {e}"
-
-    return f"Received: {prompt}"
-
-def ask(model_name, history, web_search=False):
-    # Extracts the latest user message from history
-    last_msg = history[-1]["content"] if history else "Hello"
-    return generate_text_response(last_msg)
+MODELS = {
+    "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct",
+    "llama-3.1-8b": "meta-llama/llama-3.1-8b-instant",
+    "mixtral-8x7b": "mistralai/mixtral-8x7b-instruct",
+    "gemma2-9b": "gemma2-9b-it"
+}
 
 def available_models():
     return {
-        "llama-3.3-70b": "Llama 3.3 70B (Default)",
+        "llama-3.3-70b": "🧠 Llama 3.3 70B",
+        "llama-3.1-8b": "⚡ Llama 3.1 8B (Fast)",
+        "mixtral-8x7b": "🌀 Mixtral 8x7B",
+        "gemma2-9b": "💎 Gemma 2 9B"
     }
+
+def ask(model_key, history, web_search=False):
+    model_id = MODELS.get(model_key, "meta-llama/llama-3.3-70b-instruct")
     
+    if not GROQ_API_KEY:
+        # Fallback if API key isn't in Render env variables yet
+        return f"Groq API key missing. Last prompt: {history[-1]['content']}"
+
+    try:
+        res = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            json={
+                "model": model_id,
+                "messages": history
+            },
+            timeout=15
+        )
+        if res.status_code == 200:
+            return res.json()["choices"][0]["message"]["content"]
+        else:
+            return f"API Error ({res.status_code}): {res.text}"
+    except Exception as e:
+        return f"Request failed: {e}"
+        
