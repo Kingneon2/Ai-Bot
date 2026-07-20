@@ -2,16 +2,13 @@ from urllib.parse import quote
 import requests
 
 def generate_video_bytes(prompt: str) -> bytes:
-    """
-    Generates moving AI video bytes via Pollinations video endpoint.
-    """
     clean_prompt = prompt.replace("/video", "").replace("/image", "").strip()
     encoded = quote(clean_prompt)
     
-    # Using 'veo' or 'wan-fast' from the official allowed models list
-    url = f"https://gen.pollinations.ai/video/{encoded}?model=veo&width=512&height=512"
+    # Public endpoint without authentication requirements
+    url = f"https://image.pollinations.ai/prompt/{encoded}%20video%20animation?width=512&height=512&nologo=true"
     
-    response = requests.get(url, timeout=90)
+    response = requests.get(url, timeout=60)
     
     if response.status_code == 200:
         return response.content
