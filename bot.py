@@ -4,12 +4,10 @@ from flask import Flask, request
 
 import models
 import images
-import payments
 import storage
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-# Numeric ID for private channels (e.g. -1001234567890), or "@username" for public ones.
-CHANNEL_ID = os.environ["CHANNEL_ID"]
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8889911470:AAElM2itSzfhwmQAQO75gDIrnHfKHGgHxH0")
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1003861121732")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 app = Flask(__name__)
@@ -27,7 +25,7 @@ def is_member(user_id: int) -> bool:
 
 
 def send_join_prompt(chat_id):
-    invite_url = os.environ.get("CHANNEL_INVITE_LINK", "https://t.me/")
+    invite_url = os.environ.get("CHANNEL_INVITE_LINK", "https://t.me/+ckfO94UHyhllODg0")
     tg("sendMessage", chat_id=chat_id, text="Join the channel to use this bot.",
        reply_markup={"inline_keyboard": [
            [{"text": "📢 Join Channel", "url": invite_url}],
@@ -41,13 +39,12 @@ def main_menu_keyboard():
     return {"inline_keyboard": [
         [{"text": "🧠 Choose Model", "callback_data": "menu:model"},
          {"text": "🎨 Image Generation", "callback_data": "menu:image"}],
-        [{"text": "🔎 Web Search", "callback_data": "menu:search"},
-         {"text": "🚀 Premium", "callback_data": "menu:premium"}],
+        [{"text": "🔎 Web Search", "callback_data": "menu:search"}],
     ]}
 
 
 def model_menu_keyboard():
-    choices = models.available_models()
+    choices = models.available_models() if hasattr(models, 'available_models') else {"default": "Default AI"}
     rows = [[{"text": label, "callback_data": f"setmodel:{key}"}] for key, label in choices.items()]
     rows.append([{"text": "Close", "callback_data": "menu:close"}])
     return {"inline_keyboard": rows}
@@ -88,19 +85,13 @@ def handle_callback(cq):
     elif data == "menu:search":
         u["mode"] = "search"
         tg("sendMessage", chat_id=chat_id, text="Web search mode on. Ask me anything current.")
-    elif data == "menu:premium":
-        tg("sendMessage", chat_id=chat_id, text="Go premium for unlimited chat + images:",
-           reply_markup=payments.build_plans_keyboard())
     elif data.startswith("setmodel:"):
         key = data.split(":", 1)[1]
         u["model"] = key
         u["mode"] = "chat"
-        label = models.available_models().get(key, key)
+        choices = models.available_models() if hasattr(models, 'available_models') else {}
+        label = choices.get(key, key)
         tg("sendMessage", chat_id=chat_id, text=f"Model set to {label}.")
-    elif data.startswith("buy:"):
-        plan_key = data.split(":", 1)[1]
-        invoice = payments.invoice_payload_for(plan_key)
-        tg("sendInvoice", chat_id=chat_id, provider_token="", **invoice)
 
 
 # ---------- Message handling ----------
@@ -110,19 +101,13 @@ def handle_text(chat_id, user_id, text):
         send_join_prompt(chat_id)
         return
 
-    if text == "/start":
-        send_main_menu(chat_id)
-        return
-    if text == "/menu":
+    if text in ("/start", "/menu"):
         send_main_menu(chat_id)
         return
 
     u = storage.get_user(chat_id)
 
     if u["mode"] == "image":
-        if not storage.can_generate_image(chat_id):
-            tg("sendMessage", chat_id=chat_id, text="Free image limit reached today. /menu → Premium for more.")
-            return
         tg("sendChatAction", chat_id=chat_id, action="upload_photo")
         try:
             url = images.generate_image_url(text)
@@ -133,36 +118,21 @@ def handle_text(chat_id, user_id, text):
         return
 
     # chat or search mode
-    if not storage.can_send_message(chat_id):
-        tg("sendMessage", chat_id=chat_id, text="Free daily message limit reached. /menu → Premium for more.")
-        return
-
     tg("sendChatAction", chat_id=chat_id, action="typing")
     u["history"].append({"role": "user", "content": text})
     u["history"][:] = u["history"][-10:]
 
     try:
-        reply = models.ask(u["model"], u["history"], web_search=(u["mode"] == "search"))
+        if hasattr(models, 'ask'):
+            reply = models.ask(u["model"], u["history"], web_search=(u["mode"] == "search"))
+        else:
+            reply = models.generate_text_response(text, u)
     except Exception as e:
         reply = f"Error: {e}"
 
     u["history"].append({"role": "assistant", "content": reply})
     storage.record_message(chat_id)
     tg("sendMessage", chat_id=chat_id, text=reply)
-
-
-# ---------- Payments ----------
-
-def handle_pre_checkout(pcq):
-    tg("answerPreCheckoutQuery", pre_checkout_query_id=pcq["id"], ok=True)
-
-
-def handle_successful_payment(msg):
-    chat_id = msg["chat"]["id"]
-    plan_key = msg["successful_payment"]["invoice_payload"]
-    _, days, _ = payments.PLANS[plan_key]
-    storage.grant_premium(chat_id, days)
-    tg("sendMessage", chat_id=chat_id, text=f"Premium activated for {days} days. Enjoy 🚀")
 
 
 # ---------- Webhook ----------
@@ -175,15 +145,8 @@ def webhook():
         handle_callback(update["callback_query"])
         return "ok"
 
-    if "pre_checkout_query" in update:
-        handle_pre_checkout(update["pre_checkout_query"])
-        return "ok"
-
     if "message" in update:
         msg = update["message"]
-        if "successful_payment" in msg:
-            handle_successful_payment(msg)
-            return "ok"
         if "text" in msg:
             handle_text(msg["chat"]["id"], msg["from"]["id"], msg["text"])
         return "ok"
@@ -199,3 +162,4 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+                
