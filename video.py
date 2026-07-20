@@ -1,16 +1,22 @@
+import os
 import requests
 
-HF_API_KEY = "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"
+HF_API_KEY = "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"
 
 def generate_video_bytes(prompt: str) -> bytes:
-    # Uses Hugging Face inference provider router
+    """
+    Calls Hugging Face serverless inference router to generate video bytes.
+    """
+    clean_prompt = prompt.replace("/video", "").replace("/image", "").strip()
+    
+    # Updated Hugging Face Router endpoint
     API_URL = "https://router.huggingface.co/hf-inference/models/damo-vilab/text-to-video-ms-1.7b"
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
     
     response = requests.post(
         API_URL, 
         headers=headers, 
-        json={"inputs": prompt}, 
+        json={"inputs": clean_prompt}, 
         timeout=60
     )
     
