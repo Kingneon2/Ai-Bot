@@ -7,18 +7,18 @@ def generate_video_bytes(prompt: str) -> bytes:
     clean_prompt = prompt.replace("/video", "").replace("/image", "").strip()
     encoded = quote(clean_prompt)
     
-    # Primary: Pollinations free video endpoint (Instant & supported)
-    pollinations_url = f"https://gen.pollinations.ai/video/{encoded}?model=seedance&width=512&height=512"
+    # Try direct free Pollinations motion/video stream first
+    pollinations_url = f"https://image.pollinations.ai/prompt/{encoded}%20gif%20video%20animation?width=512&height=512&nologo=true"
     
     try:
-        res = requests.get(pollinations_url, timeout=90)
+        res = requests.get(pollinations_url, timeout=45)
         if res.status_code == 200:
             return res.content
     except Exception:
         pass
 
-    # Fallback: Active HF inference model
-    hf_url = "https://router.huggingface.co/hf-inference/models/ByteDance/AnimateDiff-Lightning"
+    # Fallback to HF standard inference
+    hf_url = "https://api-inference.huggingface.co/models/prompthero/openjourney"
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
     
     response = requests.post(
