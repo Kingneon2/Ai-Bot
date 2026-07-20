@@ -14,14 +14,22 @@ app = Flask(__name__)
 
 
 def tg(method, **params):
-    return requests.post(f"{TELEGRAM_API}/{method}", json=params, timeout=15).json()
+    try:
+        res = requests.post(f"{TELEGRAM_API}/{method}", json=params, timeout=15)
+        return res.json()
+    except Exception as e:
+        print(f"Telegram API Error ({method}): {e}")
+        return {"ok": False}
 
 
 def is_member(user_id: int) -> bool:
+    if not CHANNEL_ID:
+        return True
     res = tg("getChatMember", chat_id=CHANNEL_ID, user_id=user_id)
     if not res.get("ok"):
-        return False
-    return res["result"]["status"] in ("member", "administrator", "creator")
+        # If bot is not admin or channel check fails, default to True so bot doesn't freeze
+        return True
+    return res.get("result", {}).get("status") in ("member", "administrator", "creator")
 
 
 def send_join_prompt(chat_id):
@@ -69,10 +77,6 @@ def handle_callback(cq):
             tg("sendMessage", chat_id=chat_id, text="Still not in the channel. Join, then tap again.")
         return
 
-    if not is_member(user_id):
-        send_join_prompt(chat_id)
-        return
-
     u = storage.get_user(chat_id)
 
     if data == "menu:close":
@@ -97,17 +101,18 @@ def handle_callback(cq):
 # ---------- Message handling ----------
 
 def handle_text(chat_id, user_id, text):
-    if not is_member(user_id):
-        send_join_prompt(chat_id)
-        return
-
+    # Always respond to /start or /menu first!
     if text in ("/start", "/menu"):
         send_main_menu(chat_id)
         return
 
+    if not is_member(user_id):
+        send_join_prompt(chat_id)
+        return
+
     u = storage.get_user(chat_id)
 
-    if u["mode"] == "image":
+    if u.get("mode") == "image":
         tg("sendChatAction", chat_id=chat_id, action="upload_photo")
         try:
             url = images.generate_image_url(text)
@@ -124,7 +129,7 @@ def handle_text(chat_id, user_id, text):
 
     try:
         if hasattr(models, 'ask'):
-            reply = models.ask(u["model"], u["history"], web_search=(u["mode"] == "search"))
+            reply = models.ask(u["model"], u["history"], web_search=(u.get("mode") == "search"))
         else:
             reply = models.generate_text_response(text, u)
     except Exception as e:
@@ -162,4 +167,4 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-                
+    
